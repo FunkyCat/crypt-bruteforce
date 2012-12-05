@@ -1,30 +1,5 @@
 #include "client.h"
 
-int cm_create_socket (short port, struct in_addr addr)
-{
-  int sock;
-  struct sockaddr_in sock_addr;
-
-  sock = socket (AF_INET, SOCK_STREAM, 0);
-  if (sock < 0)
-  {
-    fprintf (stderr, "error: socket()\n");
-    return -1;
-  }
-
-  sock_addr.sin_family = AF_INET;
-  sock_addr.sin_port = htons (port);
-  sock_addr.sin_addr = addr;
-
-  if (connect (sock, (struct sockaddr *) &sock_addr, sizeof (sock_addr)) < 0)
-  {
-    fprintf (stderr, "error: connect()\n");
-    return -1;
-  }
-
-  return sock;
-}
-
 int cm_socket_cycle (int socket, context_t * context)
 {
   char * buffer;
@@ -38,7 +13,6 @@ int cm_socket_cycle (int socket, context_t * context)
 	{
 	  xml_to_message (buffer, &message);
 	  printf ("task: %s [%d; %d)... ", message.task.password, message.task.left, message.task.right);
-	  fflush (stdout);
 	  free (buffer);
 
 	  context->hash = message.hash;
@@ -61,15 +35,10 @@ int cm_socket_cycle (int socket, context_t * context)
 	      printf ("not found\n");
 	      message.result = 0;
 	    }
-	  if ((send_status = send_message (socket, &message)) == -1)
+	  if ((send_status = send_message (socket, &message)) <= 0)
 	    {
 	      fprintf (stderr, "error: send_message()\n");
 	      return -1;
-	    }
-	  else if (send_status == 0)
-	    {
-	      printf ("Server closed connection\n");
-	      break;
 	    }
 	}
       else if (recv_status == S_CONNECTION_CLOSED)
@@ -92,7 +61,7 @@ void client_mode (context_t * context)
   context->n_cpus =  (int) sysconf (_SC_NPROCESSORS_ONLN);
   printf ("n_cpus = %d\n", context->n_cpus);
 
-  int sock = cm_create_socket (context->port, context->addr);
+  int sock = cli_create_socket (context->port, context->addr);
   if (sock < 0)
     {
       fprintf (stderr, "error: cm_create_socket()\n");

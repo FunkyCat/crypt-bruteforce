@@ -1,8 +1,9 @@
 #include "shared.h"
-#include "client.h"
 #include "single.h"
 #include "multi.h"
+#include "client.h"
 #include "server.h"
+#include "client_async.h"
 #include "server_async.h"
  
 int parse_args (int argc, char * argv[], context_t * context)
@@ -69,7 +70,7 @@ int parse_args (int argc, char * argv[], context_t * context)
       exit (EXIT_FAILURE);
     }
 
-  if ((context->hash == NULL) && (context->run_mode != RM_CLIENT))
+  if ((context->hash == NULL) && (context->run_mode != RM_CLIENT) && (context->run_mode != RM_CLIENT_ASYNC))
     {
       fprintf (stderr, "error: hash not defined\n");
       exit (EXIT_FAILURE);
@@ -155,17 +156,20 @@ int main (int argc, char* argv[])
       server_async_mode (&context);
       break;
     case RM_CLIENT_ASYNC:
-      //client_async_mode (&context);
+      client_async_mode (&context);
       break;
     }
 
-  if (context.result.found)
+  if (context.run_mode != RM_CLIENT && context.run_mode != RM_CLIENT_ASYNC)
     {
-      printf ("Found! Password: %s\n", context.result.password);
-    }
-  else
-    {
-      printf ("Not found\n");
+      if (context.result.found)
+	{
+	  printf ("Found! Password: %s\n", context.result.password);
+	}
+      else
+	{
+	  printf ("Not found\n");
+	}
     }
 
   return (EXIT_SUCCESS); 

@@ -2,14 +2,15 @@ Crypt-Bruteforce is a tool for bruteforce standard linux passwords, encrypted wi
 1. Single mode. Bruteforce password in a single thread.
 2. Multi mode. Bruteforce password in multiple threads.
 3. Synchronous client-server mode. Server generate tasks for bruteforce, send them to clients and receive results.
-Also, Crypt-Bruteforce supports asynchronous server mode, but it is unstable.
+4. Asynchronous client-server mode. Unstable.
 
 Run params:
 -s -- Single mode.
 -m -- Multi mode. [default]
 -c -- Synchronous client mode.
 -t -- Synchronous server mode.
--x -- Asynchronoys server mode. [unstable]
+-x -- Asynchronous server mode. [unstable]
+-y -- Asynchronous client mode. [unstable]
 -h string -- Hash to brute.
 -b integer -- Block length. Can't be negative. [default = 1]
 -l integer -- Maximum length. Can't be less then or equal to zero. [default = 6]

@@ -136,6 +136,7 @@ void * tam_client_thread (context_t * context, int client_socket)
     }
   pthread_mutex_unlock (&context->continue_execute_mutex);
 
+  close (client_socket);
 
   printf ("(%d) disconnected\n", client_socket);
 

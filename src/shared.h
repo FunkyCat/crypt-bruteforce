@@ -71,6 +71,16 @@ typedef enum {
   RM_SERVER_ASYNC,
 } run_mode_t;
 
+typedef struct result_queue_s {
+  result_t queue[RESULT_QUEUE_SIZE];
+  sem_t full;
+  sem_t empty;
+  int head;
+  int tail;
+  pthread_mutex_t head_mutex;
+  pthread_mutex_t tail_mutex;
+} result_queue_t;
+
 typedef struct context_s context_t;
 
 typedef struct context_s {
@@ -97,6 +107,7 @@ typedef struct context_s {
   pthread_cond_t continue_execute_sem;
   int id;
   void * (*srv_client_thread)(context_t *, int);
+  result_queue_t result_queue;
 } context_t;
 
 typedef struct tasks_register_s {
@@ -115,16 +126,10 @@ typedef struct client_s {
   int err;
 } client_t;
 
-
-typedef struct result_queue_s {
-  result_t queue[RESULT_QUEUE_SIZE];
-  sem_t full;
-  sem_t empty;
-  int head;
-  int tail;
-  pthread_mutex_t head_mutex;
-  pthread_mutex_t tail_mutex;
-} result_queue_t;
+typedef struct server_s {
+  int fd;
+  context_t * context;
+} server_t;
 
 typedef struct {
   cs_message_type_t type;
@@ -143,25 +148,31 @@ typedef enum {
   S_CONNECTION_CLOSED
 } cs_status_t;
 
-int check_multithread (task_t * task, context_t * context);
+int check_multithread (task_t *, context_t *);
 
-void * multithread_checker_thread (void * arg);
+void * multithread_checker_thread (void *);
 
-int brute_block_iterative (task_t * task, int (*handler)(task_t*, context_t *), context_t * context);
+int brute_block_iterative (task_t *, int (*handler)(task_t*, context_t *), context_t *);
 
-void queue_pop (queue_t * queue, task_t * dst);
+void queue_pop (queue_t *, task_t *);
 
-void queue_push (queue_t * queue, task_t * src);
+void queue_push (queue_t *, task_t *);
 
-void queue_init (queue_t * queue);
+void queue_init (queue_t *);
 
-int queue_push_wrapper (task_t * task, context_t * context);
+void result_queue_pop (result_queue_t *, result_t *);
 
-int check_password (task_t * task, context_t * context);
+void result_queue_push (result_queue_t *, result_t *);
 
-int print_task (task_t * task, context_t * context);
+void result_queue_init (result_queue_t *);
 
-void check_block (task_t * task, context_t * context);
+int queue_push_wrapper (task_t *, context_t *);
+
+int check_password (task_t *, context_t *);
+
+int print_task (task_t *, context_t *);
+
+void check_block (task_t *, context_t *);
 
 int send_message (int, cs_message_t *);
 
@@ -196,5 +207,7 @@ void srv_init (context_t *);
 void srv_wait (context_t *);
 
 void server (context_t *);
+
+int cli_create_socket (short, struct in_addr addr);
 
 #endif

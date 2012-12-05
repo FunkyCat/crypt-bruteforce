@@ -80,7 +80,9 @@ void queue_pop (queue_t * queue, task_t * dst)
   pthread_mutex_lock (&queue->tail_mutex);
   *dst = queue->queue[queue->tail];
   if (++queue->tail == sizeof (queue->queue) / sizeof (queue->queue[0]))
-    queue->tail = 0;
+    {
+      queue->tail = 0;
+    }
   pthread_mutex_unlock (&queue->tail_mutex);
   sem_post (&queue->empty);
 }
@@ -91,7 +93,9 @@ void queue_push (queue_t * queue, task_t * src)
   pthread_mutex_lock (&queue->head_mutex);
   queue->queue[queue->head] = *src;
   if (++queue->head == sizeof (queue->queue) / sizeof (queue->queue[0]))
-    queue->head = 0;
+    {
+      queue->head = 0;
+    }
   pthread_mutex_unlock (&queue->head_mutex);
   sem_post (&queue->full);
 }
@@ -105,6 +109,42 @@ void queue_init (queue_t * queue)
   queue->head = 0;
   queue->tail = 0;
 }
+
+void result_queue_push (result_queue_t * result_queue, result_t * src)
+{
+  sem_wait (&result_queue->empty);
+  pthread_mutex_lock (&result_queue->head_mutex);
+  result_queue->queue[result_queue->head] = *src;
+  if (++result_queue->head == sizeof (result_queue->queue) / sizeof (result_queue->queue[0]))
+    {
+      result_queue->head = 0;
+    }
+    pthread_mutex_unlock (&result_queue->head_mutex);
+    sem_post (&result_queue->full);
+}
+
+void result_queue_pop (result_queue_t * result_queue, result_t * dst)
+{
+  sem_wait (&result_queue->full);
+  pthread_mutex_lock (&result_queue->tail_mutex);
+  *dst = result_queue->queue[result_queue->tail];
+  if (++result_queue->tail == sizeof (result_queue->queue) / sizeof (result_queue->queue[0]))
+    {
+      result_queue->tail = 0;
+    }
+  pthread_mutex_unlock (&result_queue->tail_mutex);
+  sem_post (&result_queue->empty);
+}
+
+void result_queue_init (result_queue_t * result_queue)
+{
+  pthread_mutex_init (&result_queue->head_mutex, NULL);
+  pthread_mutex_init (&result_queue->tail_mutex, NULL);
+  sem_init (&result_queue->full, 0, 0);
+  sem_init (&result_queue->empty, 0, RESULT_QUEUE_SIZE);
+  result_queue->head = 0;
+  result_queue->tail = 0;
+}    
 
 int queue_push_wrapper (task_t * task, context_t * context)
 {
@@ -611,4 +651,29 @@ void server (context_t * context)
   srv_wait (context);
  
   pthread_cancel (listener_thread);
+}
+
+int cli_create_socket (short port, struct in_addr addr)
+{
+  int sock;
+  struct sockaddr_in sock_addr;
+
+  sock = socket (AF_INET, SOCK_STREAM, 0);
+  if (sock < 0)
+  {
+    fprintf (stderr, "error: socket()\n");
+    return -1;
+  }
+
+  sock_addr.sin_family = AF_INET;
+  sock_addr.sin_port = htons (port);
+  sock_addr.sin_addr = addr;
+
+  if (connect (sock, (struct sockaddr *) &sock_addr, sizeof (sock_addr)) < 0)
+  {
+    fprintf (stderr, "error: connect()\n");
+    return -1;
+  }
+
+  return sock;
 }
