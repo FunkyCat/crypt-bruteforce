@@ -9,15 +9,15 @@ void * tam_reader_thread (void * args)
   char * buffer;
   cs_message_t message;
 
-  for (;;)
+  for (; !context->result.found;)
     {
       recv_status = recv_message (client->fd, &buffer);
+      fflush (stdout);
       if (recv_status == S_SUCCESS)
 	{
 	  xml_to_message (buffer, &message);
 	  free (buffer);
 
-	  pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL);
 	  pthread_mutex_lock (&client->tasks_register.free_mutex);
 	  fflush (stdout);
 	  client->tasks_register.free_idx[client->tasks_register.free++] = message.task.idx;
@@ -28,24 +28,17 @@ void * tam_reader_thread (void * args)
 	    {
 	      context->result.found = !0;
 	      strcpy (context->result.password, message.password);
-	      pthread_mutex_lock (&context->continue_execute_mutex);
 	      context->continue_execute = 0;
-	      pthread_mutex_unlock (&context->continue_execute_mutex);
-	      break;
 	    }
-	  pthread_setcancelstate (PTHREAD_CANCEL_ENABLE, NULL);
 	}
       else
 	{
 	  client->close = !0;
-	  if (recv_status != S_CONNECTION_CLOSED)
-	    {
-	      client->err = 1;
-	    }
 	  break;
 	}
     }
   pthread_cond_broadcast (&context->continue_execute_sem);
+  printf ("(%d) reader ended\n", client->fd);
   return NULL;
 }
 
@@ -61,13 +54,13 @@ void * tam_writer_thread (void * args)
     {
       sem_wait (&client->tasks_register.empty);
       queue_pop (&context->queue, &task);
-      pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL);
-      /*      if (task.final)
+      if (task.final)
 	{
+	  sem_post (&client->tasks_register.empty);
 	  queue_push (&context->queue, &task);
 	  break;
 	}
-      */
+
       if (context->result.found)
 	{
 	  dec_sem (&context->tasks_in_process, &context->tasks_in_process_sem, &context->tasks_in_process_mutex);
@@ -76,9 +69,8 @@ void * tam_writer_thread (void * args)
 	}
       pthread_mutex_lock (&client->tasks_register.free_mutex); 
       task.idx = client->tasks_register.free_idx[--client->tasks_register.free];
-      client->tasks_register.tasks[task.idx] = task;
       pthread_mutex_unlock (&client->tasks_register.free_mutex);
-      pthread_setcancelstate (PTHREAD_CANCEL_ENABLE, NULL);
+      client->tasks_register.tasks[task.idx] = task;
       
       message.type = MT_SEND_JOB;
       message.alph = context->alph;
@@ -91,11 +83,11 @@ void * tam_writer_thread (void * args)
 	{
 	  fprintf (stderr, "error: send_message()\n");
 	  client->close = !0;
-	  client->err = 1;
 	  break;
 	}
     }
   pthread_cond_broadcast (&context->continue_execute_sem);
+  printf ("(%d) writer ended\n", client->fd);
   return NULL;
 }
 
@@ -136,28 +128,29 @@ void * tam_client_thread (context_t * context, int client_socket)
     }
   pthread_mutex_unlock (&context->continue_execute_mutex);
 
+  shutdown (client_socket, 2);
   close (client_socket);
+  sem_post (&client.tasks_register.empty);
 
   printf ("(%d) disconnected\n", client_socket);
 
-  pthread_cancel (writer_thread);
-  pthread_cancel (reader_thread);
-  
+  printf ("(%d) wait for threads\n", client_socket);
+
+  pthread_join (writer_thread, NULL);
+  pthread_join (reader_thread, NULL);
+  printf ("(%d) pushing back\n", client_socket);
   if (!context->result.found)
     {
-      int i, j, found;
+      int in_use [REGISTER_SIZE];
+      memset (in_use, !0, sizeof (in_use));
+      int i;
+      for (i = 0; i < client.tasks_register.free; i++)
+	{
+	  in_use[client.tasks_register.free_idx[i]] = 0;
+	}
       for (i = 0; i < REGISTER_SIZE; i++)
 	{
-	  found = 0;
-	  for (j = 0; j < client.tasks_register.free; j++)
-	    {
-	      if (client.tasks_register.free_idx[j] == i)
-		{
-		  found = !0;
-		  break;
-		}
-	    }
-	  if (!found)
+	  if (in_use[i] != 0)
 	    {
 	      printf ("(%d) pushed back: [%d.%d] %s\n", client.fd, client.tasks_register.tasks[i].id, client.tasks_register.tasks[i].idx, client.tasks_register.tasks[i].password);
 	      queue_push (&context->queue, &client.tasks_register.tasks[i]);

@@ -141,7 +141,7 @@ typedef struct {
 } cs_message_t;
 
 typedef enum {
-  S_SUCCESS,
+  S_SUCCESS = 0,
   S_MEMORY_ERROR,
   S_RECV_ERROR,
   S_SEND_ERROR,

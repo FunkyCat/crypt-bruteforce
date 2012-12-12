@@ -227,8 +227,8 @@ cs_status_t recv_message (int sockid, char ** buffer)
       fprintf (stderr, "error: malloc()\n");
       return S_MEMORY_ERROR;
     }
-  processed = 0;
-  while (processed < length)
+
+  for (processed = 0; processed < length; processed += bytes_read)
     {
       bytes_read = recv (sockid, *buffer + processed,
 			 length - processed, 0);
@@ -236,14 +236,13 @@ cs_status_t recv_message (int sockid, char ** buffer)
 	{
 	  fprintf (stderr, "error: bytes_read == 0\n");
 	  free (*buffer);
-	  return S_RECV_ERROR;
+	  return S_CONNECTION_CLOSED;
 	}
       if (bytes_read < 0){
 	fprintf (stderr, "error: recv()_2\n");
 	free (*buffer);
 	return S_RECV_ERROR;
       }
-      processed += bytes_read;
     }
   return S_SUCCESS;
 }
@@ -606,7 +605,6 @@ void srv_init (context_t * context)
 
 void srv_wait (context_t * context)
 {
-  printf ("tasks_in_process = %d\n", context->tasks_in_process);
   if ((context->run_mode == RM_SERVER && context->result.found) || (context->run_mode == RM_SERVER_ASYNC && !context->result.found))
     {
       pthread_mutex_lock (&context->tasks_in_process_mutex);
@@ -642,7 +640,7 @@ void server (context_t * context)
 
   srv_generate_tasks (context);
 
-  if (context->run_mode == RM_SERVER)
+  if (/*context->run_mode == RM_SERVER*/ !0)
     {
       task_t end_task = { .final = !0 };
       queue_push (&context->queue, &end_task);
