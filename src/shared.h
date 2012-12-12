@@ -55,6 +55,7 @@ typedef struct result_s {
   brute_result_t result;
   int id;
   int idx;
+  int final;
 } result_t;
 
 typedef enum {

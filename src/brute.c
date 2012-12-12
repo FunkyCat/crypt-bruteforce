@@ -118,7 +118,11 @@ int main (int argc, char* argv[])
     aaaaaa = aa4YsP554yc3s
     abcdef = aaoLCKdLho5jo
     hello = aaPwJ9XL9Y99E
+    zzzz = aazMmYv6wT7dg
   */
+  
+  printf ("zzzz = %s\n", crypt ("zzzz", "aa"));
+
   context_t context = {
     .alph = "abcdefghijklmnopqrstuvwxyz",
     .max_length = 6,
