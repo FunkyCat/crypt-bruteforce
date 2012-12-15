@@ -70,6 +70,7 @@ typedef enum {
   RM_SERVER,
   RM_CLIENT_ASYNC,
   RM_SERVER_ASYNC,
+  RM_SERVER_EPOLL
 } run_mode_t;
 
 typedef struct result_queue_s {
@@ -148,6 +149,24 @@ typedef enum {
   S_SEND_ERROR,
   S_CONNECTION_CLOSED
 } cs_status_t;
+
+typedef enum {
+  ESS_HEAD,
+  ESS_BODY
+} epoll_state_status_t;
+
+typedef struct epoll_state_s {
+  char * buffer;
+  epoll_state_status_t status;
+  int bytes;
+  int total;
+} epoll_state_t;
+
+typedef struct epoll_client_s {
+  int fd;
+  epoll_state_t read_state;
+  epoll_state_t write_state;
+} epoll_client_t;
 
 int check_multithread (task_t *, context_t *);
 

@@ -5,11 +5,12 @@
 #include "server.h"
 #include "client_async.h"
 #include "server_async.h"
+#include "server_epoll.h"
  
 int parse_args (int argc, char * argv[], context_t * context)
 {
   int opt;
-  while ((opt = getopt (argc, argv, "smctlbpahxy")) != -1)
+  while ((opt = getopt (argc, argv, "smctlbpahxye")) != -1)
     {
       switch (opt)
 	{
@@ -30,6 +31,9 @@ int parse_args (int argc, char * argv[], context_t * context)
 	  break;
 	case 'y':
 	  context->run_mode = RM_CLIENT_ASYNC;
+	  break;
+	case 'e':
+	  context->run_mode = RM_SERVER_EPOLL;
 	  break;
 	case 'l':
 	  context->max_length = atoi (argv[optind++]);
@@ -104,7 +108,10 @@ int parse_args (int argc, char * argv[], context_t * context)
       printf ("run_mode = RM_SERVER_ASYNC\n");
       printf ("port = %d\n", context->port);
       break;
-    
+    case RM_SERVER_EPOLL:
+      printf ("run_mode = RM_SERVER_ASYNC\n");
+      printf ("port = %d\n", context->port);
+      break;
     }
   printf ("max_length = %d\n", context->max_length);
   printf ("block_size = %d\n", context->block_size);
@@ -121,10 +128,8 @@ int main (int argc, char* argv[])
     zzzz = aazMmYv6wT7dg
   */
   
-  printf ("zzzz = %s\n", crypt ("zzzz", "aa"));
-
   context_t context = {
-    .alph = "abcdefghijklmnopqrstuvwxyz",
+    .alph = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
     .max_length = 6,
     .result = {
       .found = 0,
@@ -156,11 +161,14 @@ int main (int argc, char* argv[])
     case RM_SERVER:
       server_mode (&context);
       break;
+    case RM_CLIENT_ASYNC:
+      client_async_mode (&context);
+      break;
     case RM_SERVER_ASYNC:
       server_async_mode (&context);
       break;
-    case RM_CLIENT_ASYNC:
-      client_async_mode (&context);
+    case RM_SERVER_EPOLL:
+      server_epoll_mode (&context);
       break;
     }
 
