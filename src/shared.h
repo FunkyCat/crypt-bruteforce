@@ -17,11 +17,14 @@
 #include <libxml2/libxml/tree.h>
 #include <libxml2/libxml/parser.h>
 #include <signal.h>
+#include <sys/epoll.h>
+#include <fcntl.h>
 
 #define QUEUE_SIZE (8)
 #define MAX_N (100)
 #define REGISTER_SIZE (8)
 #define RESULT_QUEUE_SIZE (8)
+#define EPOLL_MAX_EVENTS (10)
 
 typedef char password_t[MAX_N + 1];
 
@@ -159,14 +162,26 @@ typedef struct epoll_state_s {
   char * buffer;
   epoll_state_status_t status;
   int bytes;
-  int total;
+  int32_t total;
 } epoll_state_t;
+
+struct epoll_client_s;
+struct reactor_s;
+
+typedef int (*event_handler_t)(struct epoll_client_s *, struct reactor_s *, struct epoll_event *);
 
 typedef struct epoll_client_s {
   int fd;
   epoll_state_t read_state;
   epoll_state_t write_state;
+  event_handler_t read;
+  event_handler_t write;
 } epoll_client_t;
+
+typedef struct reactor_s {
+  context_t * context;
+  int epollfd;
+} reactor_t;
 
 int check_multithread (task_t *, context_t *);
 
