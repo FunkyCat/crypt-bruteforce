@@ -122,6 +122,14 @@ int client_write_handler (epoll_client_t * client, reactor_t * reactor, struct e
   return 0;
 }
 
+void close_client (int client_id, reactor_t * reactor)
+{
+  epoll_client_t * client = reactor->clients_pool.clients[client_id];
+  close (client->fd);
+  del_from_clients_pool (client_id, &reactor->clients_pool);
+  free (client);
+}
+
 int listener_handler (epoll_client_t * client, reactor_t * reactor, struct epoll_event * ev)
 {
   struct epoll_event client_ev;
@@ -154,8 +162,7 @@ int listener_handler (epoll_client_t * client, reactor_t * reactor, struct epoll
   if (epoll_ctl (reactor->epollfd, EPOLL_CTL_ADD, client_fd, &client_ev) == -1)
     {
       fprintf (stderr, "error: epoll_ctl()\n");
-      // free new client
-      close (client_fd);
+      close_client ((int)client_ev.data.ptr, reactor);
       return -1;
     }
   return 0;
@@ -223,7 +230,7 @@ void * tem_epoll (void * args)
   if (epoll_ctl (reactor.epollfd, EPOLL_CTL_ADD, listener.fd, &ev) == -1)
     {
       close (listener.fd);
-      // close epoll fd
+      close (reactor.epollfd);
       printf ("error: epoll_ctl (listener)\n");
       return NULL;
     }
