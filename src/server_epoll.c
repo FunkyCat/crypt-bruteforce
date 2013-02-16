@@ -27,7 +27,7 @@ void client_state_init (epoll_state_t * state)
 
 int client_read_head (epoll_client_t * client, reactor_t * reactor)
 {
-  int size = read (&((char*)&client->read_state.total)[client->read_state.bytes], sizeof (client->read_state.total) - client->read_state.bytes);
+  int size = read (client->fd, &((char *)&client->read_state.total)[client->read_state.bytes], sizeof (client->read_state.total) - client->read_state.bytes);
   if (size <= 0)
     {
       fprintf (stderr, "error: read()\n");
@@ -37,8 +37,8 @@ int client_read_head (epoll_client_t * client, reactor_t * reactor)
   if (client->read_state.bytes == sizeof(client->read_state.total))
     {
       client->read_state.status = ESS_BODY;
-      client->read_state.buf = malloc (client->read_state.total);
-      if (client->read_state.buf == NULL)
+      client->read_state.buffer = malloc (client->read_state.total);
+      if (client->read_state.buffer == NULL)
 	{
 	  fprintf (stderr, "error: malloc()\n");
 	  return -1;
@@ -50,9 +50,31 @@ int client_read_head (epoll_client_t * client, reactor_t * reactor)
     return 0;
 }
 
-int client_read_head (epoll_client_t * client, reactor_t * reactor)
+int add_to_clients_pool (epoll_client_t * client, epoll_clients_pool_t * pool)
 {
-  int size = read (&client->read_state.buf[client->read_state.bytes], client->read_state.total - client->read_state.bytes);
+  if (pool->free_ptr < 0)
+    {
+      return -1;
+    }
+  pool->clients[pool->free[pool->free_ptr]] = client;
+  return pool->free[pool->free_ptr--];
+}
+
+int del_from_clients_pool (int client_id, epoll_clients_pool_t * pool)
+{
+  pool->free[++pool->free_ptr] = client_id;
+  return 0;
+}
+
+int client_process_message (epoll_client_t * client, reactor_t * reactor)
+{
+
+  return 0;
+}
+
+int client_read_body (epoll_client_t * client, reactor_t * reactor)
+{
+  int size = read (client->fd, &client->read_state.buffer[client->read_state.bytes], client->read_state.total - client->read_state.bytes);
   if (size <= 0)
     {
       fprintf (stderr, "error: read()\n");
@@ -71,7 +93,7 @@ int client_read_head (epoll_client_t * client, reactor_t * reactor)
 }
 
 
-int client_read_handler (epoll_client_t * client, reactor_t * reactor)
+int client_read_handler (epoll_client_t * client, reactor_t * reactor, struct epoll_event * ev)
 {
   int size;
   for (;;)
@@ -79,13 +101,13 @@ int client_read_handler (epoll_client_t * client, reactor_t * reactor)
       {
       case ESS_HEAD:
 	size = client_read_head (client, reactor);
-	if (size <= 0)
+	if (size < 0)
 	  return (size);
 	break;
 	
       case ESS_BODY:
 	size = client_read_body (client, reactor);
-	if (size <= 0)
+	if (size < 0)
 	  return (size);
 	break;
       }
@@ -127,19 +149,21 @@ int listener_handler (epoll_client_t * client, reactor_t * reactor, struct epoll
   client_info->write = client_write_handler;
   client_state_init (&client_info->read_state);
   client_state_init (&client_info->write_state);
-  client_ev.data.ptr = client_info;
+  client_ev.data.ptr = (void *)add_to_clients_pool(client, &reactor->clients_pool);
   client_ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR;
   if (epoll_ctl (reactor->epollfd, EPOLL_CTL_ADD, client_fd, &client_ev) == -1)
     {
       fprintf (stderr, "error: epoll_ctl()\n");
+      // free new client
       close (client_fd);
       return -1;
     }
   return 0;
 }
 
-int client_read (epoll_client_t * client, reactor_t * reactor, struct epoll_event * ev)
+int client_read (int client_id, reactor_t * reactor, struct epoll_event * ev)
 {
+  epoll_client_t * client = reactor->clients_pool.clients[client_id];
   if (NULL == client)
     return (-1);
   if (NULL == client->read)
@@ -147,8 +171,9 @@ int client_read (epoll_client_t * client, reactor_t * reactor, struct epoll_even
   return (client->read (client, reactor, ev));
 }
 
-int client_write (epoll_client_t * client, reactor_t * reactor, struct epoll_event * ev)
+int client_write (int client_id, reactor_t * reactor, struct epoll_event * ev)
 {
+  epoll_client_t * client = reactor->clients_pool.clients[client_id];
   if (NULL == client)
     return (-1);
   if (NULL == client->write)
@@ -161,16 +186,24 @@ void * tem_epoll (void * args)
   reactor_t reactor = {
     .context = args
   };
+
+  int i, j;
+  for (i = EPOLL_CLIENTS_POOL_SIZE - 1, j = 0; i >= 0; i--, j++)
+    {
+      reactor.clients_pool.free[i] = j;
+    }
+  reactor.clients_pool.free_ptr = EPOLL_CLIENTS_POOL_SIZE - 1;
+
   struct epoll_event ev, events[EPOLL_MAX_EVENTS];
   int nfds;
   epoll_client_t listener = {
     .read = listener_handler,
     .write = NULL
   };
-  epoll_client_t * client;
+
 
   listener.fd = srv_create_listener (reactor.context->port, reactor.context->addr);
-  if (listener.fd== -1)
+  if (listener.fd == -1)
     {
       fprintf (stderr, "error: srv_create_listener()\n");
       return NULL;
@@ -190,6 +223,7 @@ void * tem_epoll (void * args)
   if (epoll_ctl (reactor.epollfd, EPOLL_CTL_ADD, listener.fd, &ev) == -1)
     {
       close (listener.fd);
+      // close epoll fd
       printf ("error: epoll_ctl (listener)\n");
       return NULL;
     }
@@ -205,7 +239,7 @@ void * tem_epoll (void * args)
       int i;
       for (i = 0; i < nfds; i++)
 	{
-	  client = events[i].data.ptr;
+	  int client = (int)events[i].data.ptr;
 	  if (events[i].events & EPOLLIN)
 	    {
 	      client_read (client, &reactor, &events[i]);
@@ -225,5 +259,5 @@ void * tem_epoll (void * args)
 
 void server_epoll_mode (context_t * context)
 {
-  
+  tem_epoll (context);
 }

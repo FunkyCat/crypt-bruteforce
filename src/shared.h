@@ -25,6 +25,7 @@
 #define REGISTER_SIZE (8)
 #define RESULT_QUEUE_SIZE (8)
 #define EPOLL_MAX_EVENTS (10)
+#define EPOLL_CLIENTS_POOL_SIZE (1000)
 
 typedef char password_t[MAX_N + 1];
 
@@ -178,9 +179,16 @@ typedef struct epoll_client_s {
   event_handler_t write;
 } epoll_client_t;
 
+typedef struct epoll_clients_pool_s {
+  epoll_client_t * clients[EPOLL_CLIENTS_POOL_SIZE];
+  int free[EPOLL_CLIENTS_POOL_SIZE];
+  int free_ptr;
+} epoll_clients_pool_t;
+
 typedef struct reactor_s {
   context_t * context;
   int epollfd;
+  epoll_clients_pool_t clients_pool;
 } reactor_t;
 
 int check_multithread (task_t *, context_t *);
