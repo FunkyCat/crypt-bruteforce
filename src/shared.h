@@ -26,7 +26,11 @@
 #define REGISTER_SIZE (8)
 #define RESULT_QUEUE_SIZE (8)
 #define EPOLL_MAX_EVENTS (10)
+<<<<<<< HEAD
 #define EPOLL_CLIENTS_POOL_SIZE (1000)
+=======
+#define EPOLL_CLIENTS_POOL_SIZE (10000)
+>>>>>>> Working on epoll 2
 
 typedef char password_t[MAX_N + 1];
 

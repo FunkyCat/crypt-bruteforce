@@ -109,7 +109,7 @@ int parse_args (int argc, char * argv[], context_t * context)
       printf ("port = %d\n", context->port);
       break;
     case RM_SERVER_EPOLL:
-      printf ("run_mode = RM_SERVER_ASYNC\n");
+      printf ("run_mode = RM_SERVER_EPOLL\n");
       printf ("port = %d\n", context->port);
       break;
     }

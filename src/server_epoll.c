@@ -29,6 +29,10 @@ int add_to_clients_pool (epoll_client_t * client, epoll_clients_pool_t * pool)
 {
   if (pool->free_ptr < 0)
     {
+<<<<<<< HEAD
+=======
+      fprintf (stderr, "error: add_to_clients_pool() poll is full");
+>>>>>>> Working on epoll 2
       return -1;
     }
   pool->clients[pool->free[pool->free_ptr]] = client;
@@ -192,7 +196,11 @@ int listener_handler (epoll_client_t * client, reactor_t * reactor, struct epoll
       fprintf (stderr, "error: accept()\n");
       return -1;
     }
+<<<<<<< HEAD
   printf ("new client fd = %d, accepting... ", client_fd);
+=======
+  fprintf (stdout, "new client fd = %d, accepting... ", client_fd);
+>>>>>>> Working on epoll 2
   if (setnonblocking (client_fd) == -1)
     {
       fprintf (stderr, "error: setnonblocking()\n");
@@ -245,8 +253,9 @@ int client_write (int client_id, reactor_t * reactor, struct epoll_event * ev)
   return (client->write (client, reactor, ev));
 }
 
-void * tem_epoll (void * args)
+void tem_init_clients_pool (epoll_clients_pool_t * pool)
 {
+<<<<<<< HEAD
   reactor_t reactor = {
     .context = args
   };
@@ -260,28 +269,56 @@ void * tem_epoll (void * args)
 
   struct epoll_event ev, events[EPOLL_MAX_EVENTS];
   int nfds;
+=======
+  int i, j;
+  for (i = EPOLL_CLIENTS_POOL_SIZE - 1, j = 0; i >= 0; i--, j++)
+    {
+      pool->free[i] = j;
+    }
+  pool->free_ptr = EPOLL_CLIENTS_POOL_SIZE - 1;
+}
+
+int tem_init_epoll (reactor_t * reactor)
+{
+  tem_init_clients_pool (&reactor->clients_pool);
+
+  struct epoll_event ev;
+>>>>>>> Working on epoll 2
   epoll_client_t listener = {
     .read = listener_handler,
     .write = NULL
   };
+<<<<<<< HEAD
 
 
   listener.fd = srv_create_listener (reactor.context->port, reactor.context->addr);
+=======
+
+  listener.fd = srv_create_listener (reactor->context->port, reactor->context->addr);
+>>>>>>> Working on epoll 2
   if (listener.fd == -1)
     {
       fprintf (stderr, "error: srv_create_listener()\n");
-      return NULL;
+      return -1;
     }
   client_state_init (&listener.read_state);
   
+<<<<<<< HEAD
   reactor.listener_id = add_to_clients_pool (&listener, &reactor.clients_pool);
 
   reactor.epollfd = epoll_create1 (0);
   if (reactor.epollfd == -1)
+=======
+  reactor->listener_id = add_to_clients_pool (&listener, &reactor->clients_pool);
+
+  reactor->epollfd = epoll_create1 (0);
+  if (reactor->epollfd == -1)
+>>>>>>> Working on epoll 2
     {
       close (listener.fd);
       fprintf (stderr, "error: epoll_create() errno = %d\n", errno);
       perror(strerror(errno));
+<<<<<<< HEAD
       return NULL;
     }
 
@@ -291,15 +328,42 @@ void * tem_epoll (void * args)
     {
       close (listener.fd);
       close (reactor.epollfd);
-      printf ("error: epoll_ctl (listener)\n");
-      return NULL;
+=======
+      return -1;
     }
+
+  ev.events = EPOLLIN;
+  ev.data.ptr = (void *)reactor->listener_id;
+  if (epoll_ctl (reactor->epollfd, EPOLL_CTL_ADD, listener.fd, &ev) == -1)
+    {
+      close (listener.fd);
+      close (reactor->epollfd);
+>>>>>>> Working on epoll 2
+      printf ("error: epoll_ctl (listener)\n");
+      return -1;
+    }
+<<<<<<< HEAD
   
   listen (listener.fd, 10);
   fprintf (stdout, "Listener create. Waiting for clients...\n");
+=======
+
+  listen (listener.fd, 10);  
+
+  return 0;
+}
+
+void * tem_epoll_cycle (void * args)
+{
+  reactor_t * reactor = args;
+
+  struct epoll_event events[EPOLL_MAX_EVENTS];
+  int nfds;
+
+>>>>>>> Working on epoll 2
   for (;;)
     {
-      nfds = epoll_wait (reactor.epollfd, events, EPOLL_MAX_EVENTS, -1);
+      nfds = epoll_wait (reactor->epollfd, events, EPOLL_MAX_EVENTS, -1);
       if (nfds == -1)
 	{
 	  fprintf (stderr, "error: epoll_wait()\n");
@@ -309,17 +373,30 @@ void * tem_epoll (void * args)
       int i;
       for (i = 0; i < nfds; i++)
 	{
+<<<<<<< HEAD
 	  int client_id = (int)events[i].data.ptr;
 	  fprintf (stdout, "client_id = %d, listener_id = %d, mask = ", client_id, reactor.listener_id);
 	  if (events[i].events & EPOLLIN)
 	    {
 	      fprintf (stdout, "IN ");
 	      client_read (client_id, &reactor, &events[i]);
+=======
+	  int client_id = events[i].data.u64;
+	  fprintf (stdout, "client_id = %d, mask = ", client_id);
+	  if (events[i].events & EPOLLIN)
+	    {
+	      fprintf (stdout, "IN ");
+	      client_read (client_id, reactor, &events[i]);
+>>>>>>> Working on epoll 2
 	    }
 	  if (events[i].events & EPOLLOUT)
 	    {
 	      fprintf (stdout, "OUT ");
+<<<<<<< HEAD
 	      client_write (client_id, &reactor, &events[i]);
+=======
+	      client_write (client_id, reactor, &events[i]);
+>>>>>>> Working on epoll 2
 	    }
 	  if (events[i].events & EPOLLERR)
 	    {
@@ -334,10 +411,33 @@ void * tem_epoll (void * args)
 	  fprintf (stdout, "\n");
 	}
     }
-
 }
 
 void server_epoll_mode (context_t * context)
 {
+<<<<<<< HEAD
   tem_epoll (context);
+=======
+  reactor_t reactor = {
+    .context = context
+  };
+
+  if (tem_init_epoll (&reactor) == -1)
+    {
+      fprintf (stderr, "error: tem_init_epoll()");
+      return;
+    }
+  fprintf (stdout, "Epoll init complete. Waiting for clients...\n");
+
+  pthread_t epoll_thread;
+  pthread_create (&epoll_thread, NULL, tem_epoll_cycle, &reactor);
+  pthread_detach (epoll_thread);
+  fprintf (stdout, "Epoll cycle thread created.\n");
+
+  fprintf (stdout, "Generating tasks...\n");
+  srv_generate_tasks (reactor.context);
+  fprintf (stdout, "Tasks generation complete. Pushing end task...");
+  task_t end_task = { .final = !0 };
+  queue_push (&context->queue, &end_task);
+>>>>>>> Working on epoll 2
 }
