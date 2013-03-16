@@ -19,6 +19,7 @@
 #include <signal.h>
 #include <sys/epoll.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #define QUEUE_SIZE (8)
 #define MAX_N (100)
@@ -189,6 +190,7 @@ typedef struct reactor_s {
   context_t * context;
   int epollfd;
   epoll_clients_pool_t clients_pool;
+  int listener_id;
 } reactor_t;
 
 int check_multithread (task_t *, context_t *);
