@@ -26,11 +26,8 @@
 #define REGISTER_SIZE (8)
 #define RESULT_QUEUE_SIZE (8)
 #define EPOLL_MAX_EVENTS (10)
-<<<<<<< HEAD
-#define EPOLL_CLIENTS_POOL_SIZE (1000)
-=======
 #define EPOLL_CLIENTS_POOL_SIZE (10000)
->>>>>>> Working on epoll 2
+#define EPOLL_EVENT_QUEUE_SIZE (10000)
 
 typedef char password_t[MAX_N + 1];
 
@@ -169,19 +166,32 @@ typedef struct epoll_state_s {
   epoll_state_status_t status;
   int bytes;
   int32_t total;
+  int actual;
 } epoll_state_t;
 
 struct epoll_client_s;
 struct reactor_s;
 
-typedef int (*event_handler_t)(struct epoll_client_s *, struct reactor_s *, struct epoll_event *);
+typedef int (*event_handler_t)(struct epoll_client_s *, struct reactor_s *);
+
+typedef struct epoll_event_queue_s {
+  uint64_t queue[EPOLL_EVENT_QUEUE_SIZE];
+  sem_t full;
+  sem_t empty;
+  int head;
+  int tail;
+  pthread_mutex_t head_mutex;
+  pthread_mutex_t tail_mutex;
+} epoll_event_queue_t;
 
 typedef struct epoll_client_s {
+  uint32_t counter;
   int fd;
   epoll_state_t read_state;
   epoll_state_t write_state;
   event_handler_t read;
   event_handler_t write;
+  pthread_mutex_t mutex;
 } epoll_client_t;
 
 typedef struct epoll_clients_pool_s {
@@ -194,7 +204,10 @@ typedef struct reactor_s {
   context_t * context;
   int epollfd;
   epoll_clients_pool_t clients_pool;
-  int listener_id;
+  uint64_t listener_id;
+  epoll_event_queue_t read_queue;
+  epoll_event_queue_t write_queue;
+  uint32_t client_counter;
 } reactor_t;
 
 int check_multithread (task_t *, context_t *);
