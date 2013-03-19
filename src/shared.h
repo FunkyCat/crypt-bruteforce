@@ -204,6 +204,7 @@ typedef struct reactor_s {
   context_t * context;
   int epollfd;
   epoll_clients_pool_t clients_pool;
+  epoll_client_t * listener;
   uint64_t listener_id;
   epoll_event_queue_t read_queue;
   epoll_event_queue_t write_queue;
