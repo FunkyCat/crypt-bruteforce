@@ -26,9 +26,8 @@ void event_queue_init (epoll_event_queue_t * queue)
   queue->tail = 0;
 }
 
-void event_queue_push (uint64_t client_id, epoll_event_queue_t * queue)
+void event_queue_push (epoll_client_id_t client_id, epoll_event_queue_t * queue)
 {
-  //fprintf (stdout, "push id = %llu\n", client_id);
   sem_wait (&queue->empty);
   pthread_mutex_lock (&queue->head_mutex);
   queue->queue[queue->head] = client_id;
@@ -40,12 +39,11 @@ void event_queue_push (uint64_t client_id, epoll_event_queue_t * queue)
   sem_post (&queue->full);
 }
 
-uint64_t event_queue_pop (epoll_event_queue_t * queue)
+epoll_client_id_t event_queue_pop (epoll_event_queue_t * queue)
 {
   sem_wait (&queue->full);
   pthread_mutex_lock (&queue->tail_mutex);
-  uint64_t ret = queue->queue[queue->tail];
-  //fprintf (stdout, "pop id = %llu\n", ret);
+  epoll_client_id_t ret = queue->queue[queue->tail];
   if (++queue->tail == sizeof (queue->queue) / sizeof (queue->queue[0]))
     {
       queue->tail = 0;
@@ -93,14 +91,14 @@ int client_process_message (epoll_client_t * client, reactor_t * reactor)
 int client_read_head (epoll_client_t * client, reactor_t * reactor)
 {
   int size = read (client->fd, &((char *)&client->read_state.total)[client->read_state.bytes], sizeof (client->read_state.total) - client->read_state.bytes);
-  if (size <= 0)
+  if (size < 0)
     {
-      fprintf (stderr, "error: read()\n");
       return -1;
     }
   client->read_state.bytes += size;
   if (client->read_state.bytes == sizeof(client->read_state.total))
     {
+      client->read_state.total = ntohl (client->read_state.total);
       client->read_state.status = ESS_BODY;
       client->read_state.buffer = malloc (client->read_state.total);
       if (client->read_state.buffer == NULL)
@@ -118,9 +116,8 @@ int client_read_head (epoll_client_t * client, reactor_t * reactor)
 int client_read_body (epoll_client_t * client, reactor_t * reactor)
 {
   int size = read (client->fd, &client->read_state.buffer[client->read_state.bytes], client->read_state.total - client->read_state.bytes);
-  if (size <= 0)
+  if (size < 0)
     {
-      fprintf (stderr, "error: read()\n");
       return -1;
     }
   client->read_state.bytes += size;
@@ -142,16 +139,34 @@ int client_read_handler (epoll_client_t * client, reactor_t * reactor)
     switch (client->read_state.status)
       {
       case ESS_HEAD:
+	fprintf (stdout, "Read HEAD\n");
 	size = client_read_head (client, reactor);
-	if (size < 0)
-	  return (size);
+	if (size == -1)
+	  {
+	    if (errno == EAGAIN)
+	      {
+		return 0;
+	      }
+	    else
+	      {
+		return (size);
+	      }
+	  }
 	break;
 	
       case ESS_BODY:
+	fprintf (stdout, "Read BODY\n");
 	size = client_read_body (client, reactor);
-	if (size < 0)
+	if (size == -1)
 	  {
-	    return (size);
+	    if (errno == EAGAIN)
+	      {
+		return 0;
+	      }
+	    else
+	      {
+		return (size);
+	      }
 	  }
 	else if (size > 0)
 	  {
@@ -254,44 +269,59 @@ void close_client (int client_id, reactor_t * reactor)
 int listener_handler (epoll_client_t * listener, reactor_t * reactor)
 {
   struct epoll_event client_ev;
-  int client_fd = accept (listener->fd, NULL, NULL);
-  if (client_fd < 0)
-    {
-      fprintf (stderr, "error: accept()\n");
-      return -1;
-    }
-  fprintf (stdout, "new client fd = %d\n", client_fd);
-  if (setnonblocking (client_fd) == -1)
-    {
-      fprintf (stderr, "error: setnonblocking()\n");
-      close (client_fd);
-      return -1;
-    }
-  epoll_client_t * client_info = malloc (sizeof (*client_info));
-  if (client_info == NULL)
-    {
-      fprintf (stderr, "error: malloc()\n");
-      close (client_fd);
-      return -1;
-    }
-  pthread_mutex_init (&client_info->mutex, NULL);
-  client_info->fd = client_fd;
-  client_info->read = client_read_handler;
-  client_info->write = client_write_handler;
-  client_info->counter = reactor->client_counter++;
-  client_state_init (&client_info->read_state);
-  client_state_init (&client_info->write_state);
+  int client_fd;
 
-  uint32_t index = add_to_clients_pool(client_info, &reactor->clients_pool);
-  client_ev.data.u64 = (uint64_t)index << 32 | client_info->counter;
-  client_ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR;
-  if (epoll_ctl (reactor->epollfd, EPOLL_CTL_ADD, client_fd, &client_ev) == -1)
-    {
-      fprintf (stderr, "error: epoll_ctl()\n");
-      close_client ((int)client_ev.data.ptr, reactor);
-      return -1;
-    }
-  fprintf (stdout, "new client counter = %u index = %u id = %llu\n", client_info->counter, index, client_ev.data.u64);
+  for (;;) {
+    client_fd = accept (listener->fd, NULL, NULL);
+    if (client_fd == -1)
+      {
+	if (errno == EAGAIN || errno == EWOULDBLOCK)
+	  {
+	    break;
+	  } 
+	else
+	  {
+	    fprintf (stderr, "error: accept()\n");
+	    return -1;
+	  }
+      }
+    fprintf (stdout, "new client fd = %d\n", client_fd);
+    if (setnonblocking (client_fd) == -1)
+      {
+	fprintf (stderr, "error: setnonblocking()\n");
+	close (client_fd);
+	return -1;
+      }
+    epoll_client_t * client_info = malloc (sizeof (*client_info));
+    if (client_info == NULL)
+      {
+	fprintf (stderr, "error: malloc()\n");
+	close (client_fd);
+	return -1;
+      }
+    pthread_mutex_init (&client_info->mutex, NULL);
+    client_info->fd = client_fd;
+    client_info->read = client_read_handler;
+    client_info->write = client_write_handler;
+    client_info->counter = reactor->client_counter++;
+    client_state_init (&client_info->read_state);
+    client_state_init (&client_info->write_state);
+
+    epoll_client_id_t client_id = {
+      .index = add_to_clients_pool(client_info, &reactor->clients_pool),
+      .counter = client_info->counter
+    };
+
+    client_ev.data.u64 = client_id.id;
+    client_ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR;
+    if (epoll_ctl (reactor->epollfd, EPOLL_CTL_ADD, client_fd, &client_ev) == -1)
+      {
+	fprintf (stderr, "error: epoll_ctl()\n");
+	close_client ((int)client_ev.data.ptr, reactor);
+	return -1;
+      }
+    fprintf (stdout, "new client counter = %u index = %u id = %llu\n", client_id.counter, client_id.index, client_id.id);
+  }
   return 0;
 }
 
@@ -301,29 +331,24 @@ void * read_worker (void * args)
 
   fprintf (stdout, "%u\n", reactor->clients_pool.clients[0]->counter);
 
-  uint64_t client_id;
+  epoll_client_id_t client_id;
   epoll_client_t * client;
-  uint32_t index, counter;
   for (;;)
     {
       client_id = event_queue_pop (&reactor->read_queue);
-      index = (uint32_t)(client_id >> 32);
-      counter = client_id & (((uint64_t)1 << 32) - 1);
-      client = reactor->clients_pool.clients[index];
+      client = reactor->clients_pool.clients[client_id.index];
       if (NULL == client)
 	{
 	  continue;
 	}
       pthread_mutex_lock (&client->mutex);
-      if (client->counter != counter)
+      if (client->counter == client_id.counter)
 	{
-	  pthread_mutex_unlock (&client->mutex);
-	  continue;
-	}
-      fprintf (stdout, "read_worker() : client popped, index = %d, counter = %d\n", index, counter);
-      if (client->read (client, reactor) == 1)
-	{
-	  event_queue_push (client_id, &reactor->read_queue);
+	  fprintf (stdout, "read_worker() : client popped, index = %d, counter = %d\n", client_id.index, client_id.counter);
+	  if (client->read (client, reactor) == 1)
+	    {
+	      event_queue_push (client_id, &reactor->read_queue);
+	    }
 	}
       pthread_mutex_unlock (&client->mutex);
     }
@@ -362,27 +387,24 @@ void * write_worker (void * args)
 {
   reactor_t * reactor = args;
 
-  uint64_t client_id;
+  epoll_client_id_t client_id;
   epoll_client_t * client;
-  uint32_t index, counter;
   int write_ret;
   for (;;)
     {
       client_id = event_queue_pop (&reactor->write_queue);
-      index = client_id >> 32;
-      counter = client_id & (((uint64_t)1 << 32) - 1);
-      client = reactor->clients_pool.clients[index];
+      client = reactor->clients_pool.clients[client_id.index];
       if (NULL == client)
 	{
 	  continue;
 	}
       pthread_mutex_lock (&client->mutex);
-      if (client->counter != counter)
+      if (client->counter != client_id.counter)
 	{
 	  pthread_mutex_unlock (&client->mutex);
 	  continue;
 	}
-      fprintf (stdout, "write worker() : client popped, index = %d, client->counter = %u counter = %u\n", index, client->counter, counter);
+      fprintf (stdout, "write worker() : client popped, index = %d, counter = %u\n", client_id.index, client_id.counter);
       if (!client->write_state.actual)
 	{
 	  fprintf (stdout, "not actual\n");
@@ -430,6 +452,7 @@ int tem_init_epoll (reactor_t * reactor)
   pthread_mutex_init (&reactor->listener->mutex, NULL);
 
   reactor->listener->fd = srv_create_listener (reactor->context->port, reactor->context->addr);
+  setnonblocking (reactor->listener->fd);
   if (reactor->listener->fd == -1)
     {
       fprintf (stderr, "error: srv_create_listener()\n");
@@ -487,8 +510,10 @@ void * tem_epoll_cycle (void * args)
       int i;
       for (i = 0; i < nfds; i++)
 	{
-	  uint64_t client_id = events[i].data.u64;
-	  fprintf (stdout, "client_id = %llu, mask = ", client_id);
+	  epoll_client_id_t client_id = {
+	    .id = events[i].data.u64
+	  };
+	  fprintf (stdout, "client_id = %llu, mask = ", client_id.id);
 	  if (events[i].events & EPOLLIN)
 	    {
 	      fprintf (stdout, "IN ");

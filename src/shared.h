@@ -174,8 +174,16 @@ struct reactor_s;
 
 typedef int (*event_handler_t)(struct epoll_client_s *, struct reactor_s *);
 
+typedef union epoll_client_id_u {
+  uint64_t id;
+  struct __attribute__ ((packed)) {
+    uint32_t index;
+    uint32_t counter;
+  };
+} epoll_client_id_t;
+
 typedef struct epoll_event_queue_s {
-  uint64_t queue[EPOLL_EVENT_QUEUE_SIZE];
+  epoll_client_id_t queue[EPOLL_EVENT_QUEUE_SIZE];
   sem_t full;
   sem_t empty;
   int head;
