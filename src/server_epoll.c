@@ -18,38 +18,51 @@ int setnonblocking(int sock)
 
 void event_queue_init (epoll_event_queue_t * queue)
 {
-  pthread_mutex_init (&queue->head_mutex, NULL);
-  pthread_mutex_init (&queue->tail_mutex, NULL);
-  sem_init (&queue->full, 0, 0);
-  sem_init (&queue->empty, 0, EPOLL_EVENT_QUEUE_SIZE);
-  queue->head = 0;
-  queue->tail = 0;
+  pthread_mutex_init (&queue->mutex, NULL);
+  pthread_cond_init (&queue->sem, NULL);
+  queue->size = 0;
+  queue->head = queue->tail = &queue->static_item;
+  queue->static_item.prev = queue->static_item.next = &queue->static_item;
 }
 
-void event_queue_push (epoll_client_id_t client_id, epoll_event_queue_t * queue)
+void event_queue_push (epoll_event_queue_t * queue, epoll_client_id_t client_id)
 {
-  sem_wait (&queue->empty);
-  pthread_mutex_lock (&queue->head_mutex);
-  queue->queue[queue->head] = client_id;
-  if (++queue->head == sizeof (queue->queue) / sizeof (queue->queue[0]))
-    {
-      queue->head = 0;
-    }
-  pthread_mutex_unlock (&queue->head_mutex);
-  sem_post (&queue->full);
+  epoll_event_queue_item_t * item = malloc (sizeof (queue->static_item));
+  item->client_id = client_id;
+
+  pthread_mutex_lock (&queue->mutex);
+
+  item->next = queue->tail;
+  item->prev = &queue->static_item;
+  queue->tail->prev = item;
+  queue->tail = item;
+  queue->head = queue->static_item.prev;
+  queue->static_item.next = item;
+  queue->size++;
+
+  pthread_mutex_unlock (&queue->mutex);
+  pthread_cond_broadcast (&queue->sem);
 }
 
 epoll_client_id_t event_queue_pop (epoll_event_queue_t * queue)
 {
-  sem_wait (&queue->full);
-  pthread_mutex_lock (&queue->tail_mutex);
-  epoll_client_id_t ret = queue->queue[queue->tail];
-  if (++queue->tail == sizeof (queue->queue) / sizeof (queue->queue[0]))
+  pthread_mutex_lock (&queue->mutex);
+  while (queue->size == 0)
     {
-      queue->tail = 0;
+      pthread_cond_wait (&queue->sem, &queue->mutex);
     }
-  pthread_mutex_unlock (&queue->tail_mutex);
-  sem_post (&queue->empty);
+
+  epoll_client_id_t ret = queue->head->client_id;
+  epoll_event_queue_item_t * tmp = queue->head;
+  queue->head->prev->next = &queue->static_item;
+  queue->static_item.prev = queue->head->prev;
+  queue->head = queue->head->prev;
+  queue->tail = queue->static_item.next;
+  queue->size--;
+
+  pthread_mutex_unlock (&queue->mutex);
+
+  free (tmp);
   return ret;
 }
 
@@ -347,7 +360,7 @@ void * read_worker (void * args)
 	  fprintf (stdout, "read_worker() : client popped, index = %d, counter = %d\n", client_id.index, client_id.counter);
 	  if (client->read (client, reactor) == 1)
 	    {
-	      event_queue_push (client_id, &reactor->read_queue);
+	      event_queue_push (&reactor->read_queue, client_id);
 	    }
 	}
       pthread_mutex_unlock (&client->mutex);
@@ -417,7 +430,7 @@ void * write_worker (void * args)
       write_ret = client->write (client, reactor);
       if (write_ret == 1)
 	{
-	  event_queue_push (client_id, &reactor->write_queue);
+	  event_queue_push (&reactor->write_queue, client_id);
 	}
       else if (write_ret == -1)
 	{
@@ -517,12 +530,12 @@ void * tem_epoll_cycle (void * args)
 	  if (events[i].events & EPOLLIN)
 	    {
 	      fprintf (stdout, "IN ");
-	      event_queue_push (client_id, &reactor->read_queue);
+	      event_queue_push (&reactor->read_queue, client_id);
 	    }
 	  if (events[i].events & EPOLLOUT)
 	    {
 	      fprintf (stdout, "OUT ");
-	      event_queue_push (client_id, &reactor->write_queue);
+	      event_queue_push (&reactor->write_queue, client_id);
 	    }
 	  if (events[i].events & EPOLLERR)
 	    {

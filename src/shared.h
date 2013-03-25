@@ -182,14 +182,21 @@ typedef union epoll_client_id_u {
   };
 } epoll_client_id_t;
 
+typedef struct epoll_event_queue_item_s epoll_event_queue_item_t;
+
+typedef struct epoll_event_queue_item_s {
+  epoll_event_queue_item_t * prev;
+  epoll_event_queue_item_t * next;
+  epoll_client_id_t client_id;
+} epoll_event_queue_item_t;
+
 typedef struct epoll_event_queue_s {
-  epoll_client_id_t queue[EPOLL_EVENT_QUEUE_SIZE];
-  sem_t full;
-  sem_t empty;
-  int head;
-  int tail;
-  pthread_mutex_t head_mutex;
-  pthread_mutex_t tail_mutex;
+  epoll_event_queue_item_t * head;
+  epoll_event_queue_item_t * tail;
+  epoll_event_queue_item_t static_item;
+  uint32_t size;
+  pthread_cond_t sem;
+  pthread_mutex_t mutex;
 } epoll_event_queue_t;
 
 typedef struct epoll_client_s {
